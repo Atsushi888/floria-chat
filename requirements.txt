@@ -1,0 +1,7 @@
+# requirements.txt — Floria Chat 共通依存
+requests>=2.31
+python-dotenv>=1.0
+floria-snippets>=0.0.1
+
+# Streamlit 版を使う場合のみ必要
+streamlit>=1.36
