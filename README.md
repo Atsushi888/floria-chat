@@ -1,187 +1,202 @@
-# Floria Chat — Streamlit & Colab Edition
+# ❄️ Floria Chat – 水と氷の精霊フローリアと語らうAIアプリ
 
-水と氷の精霊 **フローリア** と会話できる、超軽量のAIチャット。  
-Pythonが分からなくても、**ブラウザだけ**で体験できます（無料枠あり）。
-
-- UI: **Streamlit**（ブラウザで動くPythonアプリ）
-- モデル呼び出し: **OpenRouter** 経由の **Llama 3.1**（または対応モデル）
-- 人格定義: **PyPI パッケージ `floria-snippets`**（外部化で再利用しやすい）
+ようこそ、**Floria Chat** へ。  
+水と氷の精霊「フローリア」とブラウザ上で語らえる、軽量AIチャットアプリです。  
+インストール不要、**10分であなたの環境に導入**できます。
 
 ---
 
-## 0. これは何をするもの？
+## 🌸 Floria Chatとは？
 
-- ブラウザでアクセス → **フローリアと会話**できます  
-- 会話はページ内で整形表示、**ログをJSONダウンロード**可能  
-- Colab でも **同じ人格・同じコード**で動きます
+- 💬 ChatGPTのような自然対話（日本語対応）
+- ☁️ **Streamlit Community Cloud** でワンクリック公開
+- 🧠 **LLaMA 3.1 (OpenRouter)** 経由で動作
+- ⚙️ 温度・トークン・折り返し幅など調整可能
+- 🧹 入力欄は**送信後に自動クリア**
+- 💾 会話ログを**JSON形式で保存**
+
+> インストールもサーバーも不要。  
+> あなたのブラウザ上で精霊フローリアが語りかけます。
 
 ---
 
-## 1. はじめての方向けの最短ルート（Streamlit で公開）
+## 🚀 はじめかた（10分で完了）
 
-> GitHub アカウントがあれば、**無料で常時公開**できます。
+### 0️⃣ 無料アカウントを準備
+| サービス | 用途 | 登録リンク |
+|-----------|------|-------------|
+| 🐙 GitHub | ソースコード保存 | https://github.com/signup |
+| ☁️ Streamlit Cloud | アプリ実行環境 | https://streamlit.io/cloud |
+| 🧠 OpenRouter | LLaMA APIキー発行 | https://openrouter.ai/ |
 
-### 1-1. このリポジトリを自分のGitHubに用意
-- GitHubで新規リポジトリを作成（例：`floria-streamlit`）
-- 下の3ファイルを置きます：
-  - `app.py`（このリポジトリのものをそのまま）
-  - `requirements.txt`
-  - `README.md`（この文章。任意）
-- コミット＆プッシュ
+---
 
-### 1-2. OpenRouter のAPIキーを取得（Llama導入）
-1. OpenRouter にGoogle/Twitter等でサインイン  
-   → ダッシュボードで **API Key** を発行  
-2. **モデル選択**：`meta-llama/llama-3.1-70b-instruct` を推奨  
-3. 単価はモデルごとに表示されます（従量制）  
-   ※無料枠は時期により変動。必要に応じて課金手段を設定
+### 1️⃣ アプリをデプロイする
+1. https://streamlit.io/cloud にログイン  
+2. 右上の **New app** をクリック  
+3. 次の設定で **Deploy**：
 
-### 1-3. Streamlit Community Cloud で公開
-1. https://streamlit.io/cloud にアクセス→ログイン  
-2. **New app** → 1-1で作成したGitHubリポジトリを選択  
-3. **Main file** に `app.py` を指定  
-4. **Advanced settings → Secrets** に以下をコピペして保存：
+| 設定項目 | 値 |
+|-----------|----|
+| Repository | Atsushi888/floria-chat |
+| Branch | main |
+| Main file path | app.py |
+
+初回ビルドには約30〜60秒かかります。  
+完了後、自動でアプリが起動します。
+
+---
+
+### 2️⃣ APIキーを登録（Secrets）
+
+1. アプリ右上の **⋮ → Settings → Secrets** を開きます。  
+2. 下の内容を**そのままコピペ**して保存します：
 
 ```
+LLAMA_API_KEY = "あなたのOpenRouter_APIキー"
 LLAMA_BASE_URL = "https://openrouter.ai/api/v1"
-LLAMA_MODEL    = "meta-llama/llama-3.1-70b-instruct"
-LLAMA_API_KEY  = "sk-ここにあなたのAPIキー"
+LLAMA_MODEL = "meta-llama/llama-3.1-70b-instruct"
 ```
 
-5. **Deploy** を押す → 数十秒でURLが発行されます  
-   例）`https://<your-app-name>.streamlit.app/`
+⚠️ **iPad/iPhoneの方へ**  
+日本語キーボードで入力すると “全角クォート（“ ”）” になることがあります。  
+**このREADMEのコードブロックを直接コピー＆ペースト** してください。  
+半角の `"`（ダブルクォーテーション）を使うのがポイントです。
 
-> これで、**誰でもブラウザからフローリアと会話**できます（OS不問）。
-
----
-
-## 2. いますぐ試したい（Colab で体験）
-
-> Colab は“自分で遊ぶ用”。無料〜少額でOK。GPU不要。
-
-1. Colab を開く → 新しいノートブック  
-2. 1セル目（依存インストール）：
-   ```bash
-   !pip install -q requests python-dotenv floria-snippets
-   ```
-3. 2セル目（`.env` を作る。**自分のキーに書き換えて**）：
-   ```bash
-   %%writefile secret.env
-   LLAMA_BASE_URL=https://openrouter.ai/api/v1
-   LLAMA_MODEL=meta-llama/llama-3.1-70b-instruct
-   LLAMA_API_KEY=sk-あなたのAPIキー
-   ```
-4. 3セル目（`chat_floria.py` 本体の中身をペーストして実行）  
-   → 画面に「🧊 フローリアと会話を始めます」と出たら成功  
-   - 複数行入力可、**空行で送信**  
-   - コマンド：`/save`, `/load`, `/recent 10`, `/clear`, `/retry`, `/bye`
-
-> 既に `chat_floria.py` を持っている人は、Colabの左側（ファイル）にアップして  
-> `!python chat_floria.py` でもOK。
+3. 保存したら、左上の **Rerun** ボタンを押してください。  
+これでフローリアが応答を開始します。❄️
 
 ---
 
-## 3. ローカルPC（Windows/macOS/Linux）で動かす
+## 💬 使い方
 
-1. Python 3.9+ を用意  
-2. 依存インストール：
-   ```bash
-   pip install requests python-dotenv floria-snippets
-   ```
-3. プロジェクト直下に `.env` を作成：
-   ```
-   LLAMA_BASE_URL=https://openrouter.ai/api/v1
-   LLAMA_MODEL=meta-llama/llama-3.1-70b-instruct
-   LLAMA_API_KEY=sk-あなたのAPIキー
-   ```
-4. 実行：
-   ```bash
-   python chat_floria.py
-   ```
+- 下部の入力欄に話しかけて **送信**
+- 入力欄は送信後に自動クリア
+- 上部の「接続設定」で以下を変更できます：
 
-> ログ保存先は `./chat_logs` を推奨（Colabの `/content/drive/...` は使わない）。
+| 設定項目 | 説明 |
+|-----------|------|
+| temperature | 創造性（0.2〜0.9推奨） |
+| max_tokens | 返答最大長（大きすぎると遅くなる） |
+| 折り返し幅 | 吹き出し横幅の調整 |
 
 ---
 
-## 4. iPad（Pythonista）で動かす（任意）
+## 🌐 公開デモ（ユーザー自身のAPIキーが必要）
 
-1. Pythonista をインストール（有料アプリ）  
-2. 付属の StaSh を導入 → ライブラリをインストール  
-   ```
-   pip install requests
-   pip install python-dotenv
-   pip install floria-snippets
-   ```
-3. `~/Documents/` に `chat_floria.py` と `secret.env` を置く  
-   - `load_dotenv(os.path.expanduser("~/Documents/secret.env"))`
-   - `LOG_DIR = os.path.expanduser("~/Documents/chat_logs")`
-4. `chat_floria.py` を開いて ▶ で実行
+このアプリは**あなたのOpenRouter APIキーを使って動作**します。  
+他人がアクセスしても、Secretsにキーを設定しない限り利用できません。
 
----
+### 💡 あなた自身のデモリンクを作る方法
 
-## 5. セキュリティと運用の注意
+1. Streamlit Cloud のあなたのアプリ画面右上 → **Share** をクリック  
+2. 生成されたURLをコピー  
+3. READMEに以下のように追記：
 
-- **APIキーは絶対にGitHubにコミットしない**  
-  - Streamlit は **Secrets**、ローカルやColabは `.env` で管理  
-- Colabはセッション切れあり → `/save` で会話ログをDriveへ  
-- モデル代は**従量課金**：`max_tokens` を 200–400 程度に抑えると安定  
-- 公開デモ（Streamlit）は**軽量UI**が基本。音声や画像は後から拡張でOK
+```
+## 🌐 公開デモ
+👉 https://floria-chat.streamlit.app/
+```
+
+このURLを他人に伝えると、  
+相手は自分の `LLAMA_API_KEY` を登録するだけでフローリアを起動できます。
+
+🧊 つまり、「他人にAPIキーを共有する必要がない」安全な公開方法です。
 
 ---
 
-## 6. よくある質問（FAQ）
+## 🧠 モデルを切り替える
 
-**Q1. Llama（LlimaじゃなくてLlama）って何？**  
-A. Metaの大規模言語モデルです。本リポジトリは **OpenRouter** 経由でLlama 3.1などを呼び出します。  
-BASE/MODEL/API を差し替えれば他モデルにも対応できます。
+Secrets の `LLAMA_MODEL` の値を変更することで、他モデルに対応できます：
 
-**Q2. 無料で使える？**  
-A. アプリ公開は無料（Streamlit Community Cloud）。ただし**モデル推論は従量課金**。OpenRouterの料金表を確認してください。
+```
+LLAMA_MODEL = "meta-llama/llama-3.1-8b-instruct"
+```
 
-**Q3. ブラウザだけで使える？**  
-A. はい。Streamlit で公開すれば、ユーザーはURLを開くだけで使えます。OSや機種は問いません。
-
-**Q4. 会話は保存できる？**  
-A. はい。Streamlit版は**JSONとしてダウンロード**可能。Colab/ローカル版は `/save` で保存、`/load` で復元できます（直近10件のプレビュー付き）。
+他のOpenRouterモデルも利用可能です。  
+対応一覧：https://openrouter.ai/models
 
 ---
 
-## 7. 参考：環境変数の一覧
+## 🧾 コストと制限（OpenRouter参考）
 
-| 変数名 | 例 | 説明 |
-|---|---|---|
-| `LLAMA_BASE_URL` | `https://openrouter.ai/api/v1` | モデル提供APIのベースURL |
-| `LLAMA_MODEL` | `meta-llama/llama-3.1-70b-instruct` | 使用モデルID |
-| `LLAMA_API_KEY` | `sk-xxxx` | APIキー（**秘密にする**） |
-
----
-
-## 8. ライセンスとクレジット
-
-- 人格定義: `floria-snippets`（MIT）  
-- このリポジトリ: MIT License  
-- Model: Meta Llama / via OpenRouter
+| 項目 | 内容 |
+|------|------|
+| 無料枠 | モデルによってあり（登録時に付与） |
+| 有料課金 | 1,000トークンあたり数円〜十数円 |
+| 速度 | 軽量モデル：1〜2秒、70Bモデル：5〜10秒前後 |
+| 制限 | トークン超過時に 429 / 401 エラーが出ることあり |
 
 ---
 
-## 9. 問題が起きたら（トラブルシュート）
+## ⚙️ トラブルシューティング
 
-- **応答が返らない**：APIキー・モデルID・BASE URL を再確認。`/api/v1` が付いているか？  
-- **エラー `401/403`**：APIキー無効 or 権限不足（OpenRouterの鍵・課金設定を確認）  
-- **Streamlit で環境変数が読めない**：**Secrets** に入れたか？（`st.secrets`が優先）  
-- **Colab でDriveに保存できない**：`drive.mount('/content/drive')` 済みか？
+| 症状 | 原因 | 対処 |
+|------|------|------|
+| LLAMA_API_KEY が未設定 | Secrets未設定 | Settings → Secrets で再設定 |
+| 401 / 403 エラー | APIキーの入力ミス・全角クォート | "（半角）で囲んで再保存 |
+| 返答が来ない | モデルが重い / トークン制限 | 軽いモデル or max_tokens を減らす |
+| Streamlit Cloudで失敗 | Repository/Branch/Pathの誤り | Atsushi888/floria-chat, main, app.py に修正 |
 
 ---
 
-### 付録：`requirements.txt`
-```txt
-streamlit>=1.36
+## 💻 ローカル実行（開発者向け）
+
+```
+git clone https://github.com/Atsushi888/floria-chat.git
+cd floria-chat
+pip install -r requirements.txt
+```
+
+`.env` ファイルを作成して次を記入（ダブルクォート必須）：
+
+```
+LLAMA_API_KEY="YOUR_API_KEY"
+LLAMA_BASE_URL="https://openrouter.ai/api/v1"
+LLAMA_MODEL="meta-llama/llama-3.1-70b-instruct"
+```
+
+その後：
+
+```
+streamlit run app.py
+```
+
+`.env` の内容はコミットしないでください。  
+秘密情報は **環境変数 or Secrets** にのみ保存します。
+
+---
+
+## 🔒 セキュリティ注意
+
+- APIキーは **Secrets / .env のみ** に保存  
+- 公開リポジトリに直書き禁止  
+- スクリーンショットや動画にキーが写らないよう注意  
+
+---
+
+## 📦 依存関係
+
+```
+streamlit>=1.32
 requests>=2.31
 python-dotenv>=1.0
-floria-snippets>=0.0.1
 ```
 
 ---
 
-“インストールから起動まで”を、**OpenRouter（Llama）導入込みで**一気通貫にしました。  
-これで初見さんでも迷わず始められるはず。
+## 📜 ライセンス
+
+MIT License  
+© 2025 Atsushi888 — Powered by Streamlit + OpenRouter
+
+---
+
+## 💠 クレジット
+
+- App & UI: Atsushi888  
+- Tech assist: Luna (リリィ)  
+- Model: LLaMA 3.1 via OpenRouter  
+- Framework: Streamlit  
+
+> “静かな氷の呼吸が、あなたの言葉に触れて微笑むとき——”
