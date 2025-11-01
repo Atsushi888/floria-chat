@@ -8,6 +8,8 @@ import streamlit as st
 # --- session state init ---
 if "user_input" not in st.session_state:
     st.session_state["user_input"] = ""
+if "show_hint" not in st.session_state:
+    st.session_state["show_hint"] = False  # 入力ヒントの表示可否
 
 # ============ ページ設定（横幅ひろびろ） ============
 st.set_page_config(page_title="Floria Chat", layout="wide")
@@ -52,14 +54,19 @@ if "messages" not in st.session_state:
         "出力は素の文章。行頭に装飾記号（*,・,•,★ など）を付けない。"
         "見出しや箇条書きは使わない。"
     )
-    STARTER_USER_MSG = "はじめまして、フローリア。いま話せるかな？"
     st.session_state.messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user",   "content": STARTER_USER_MSG},
     ]
 
 # ============ パラメータ ============
 st.title("❄️ Floria Chat — Streamlit Edition")
+with st.expander("世界観とあなたの役割（ロール）", expanded=False):
+    st.markdown("""
+**舞台**：白霧の湖のほとり。水と氷の精霊フローリアは、封印の鎖に縛られている。  
+**あなた**：旅の来訪者。観察者ではなく、語りかけ・問いかけ・提案で物語を動かす当事者。  
+**お願い**：命令口調よりも、状況描写や気持ち・意図を添えて話しかけると、会話が豊かになります。
+""")
+    st.checkbox("入力ヒントを表示する", key="show_hint")
 
 with st.expander("接続設定", expanded=False):
     c1, c2, c3 = st.columns(3)
@@ -140,13 +147,22 @@ for m in dialog:
         st.markdown(f"<div class='chat-bubble assistant'><b>フローリア：</b><br>{txt}</div>", unsafe_allow_html=True)
 
 # ============ 入力欄（送信後に自動クリア！） ============
+STARTER_HINT = "……白い霧の向こうに気配がする。そこにいるのは誰？"
 st.markdown("---")
+
 st.text_area(
     "あなたの言葉（複数行OK・空行不要）",
     key="user_input",
     height=160,
+    placeholder=(STARTER_HINT if st.session_state.get("show_hint") else ""),
     label_visibility="visible",
 )
+
+# 入力欄の下に小さな補助ボタン（自動送信はしない）
+hint_col, _ = st.columns([1,3])
+if hint_col.button("ヒントを入力欄に挿入"):
+    st.session_state["user_input"] = STARTER_HINT
+    st.rerun()
 
 def on_send():
     user_text = st.session_state.get("user_input", "").strip()
@@ -164,7 +180,6 @@ c_send.button("送信", type="primary", on_click=on_send)
 if c_new.button("新しい会話を始める", use_container_width=True):
     base_sys = st.session_state.messages[0]  # system は維持
     st.session_state.messages = [base_sys]
-    st.session_state.messages.append({"role": "user", "content": "はじめまして、フローリア。いま話せるかな？"})
     st.session_state["user_input"] = ""
     st.rerun()
 
