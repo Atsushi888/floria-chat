@@ -104,7 +104,7 @@ def floria_say(user_text: str):
                     "temperature": float(temperature),
                     "max_tokens": int(max_tokens),
                 },
-                timeout=60,
+                timeout=(10, 60)
             )
 
         # できるだけ安全にパース
@@ -150,11 +150,14 @@ for m in dialog:
 # 1) 先にヒント文字列
 STARTER_HINT = "……白い霧の向こうに気配がする。そこにいるのは誰？"
 
-# 2) 入力欄の直前 or 直後どちらでもOK（テキストエリアはこの後にあること）
-def insert_hint():
-    st.session_state["user_input"] = STARTER_HINT
+# 2) ヒント挿入フラグ
+if "_insert_hint" not in st.session_state:
+    st.session_state["_insert_hint"] = False
 
-# 3) 入力欄
+def ask_insert_hint():
+    st.session_state["_insert_hint"] = True
+
+# 3) 入力欄（そのまま）
 st.text_area(
     "あなたの言葉（複数行OK・空行不要）",
     key="user_input",
@@ -163,42 +166,59 @@ st.text_area(
     label_visibility="visible",
 )
 
-# 4) ボタンは on_click でコールバックを指定
+# 4) ボタン：on_click ではフラグだけ立てる
 hint_col, _ = st.columns([1,3])
-hint_col.button("ヒントを入力欄に挿入", on_click=insert_hint)
+hint_col.button("ヒントを入力欄に挿入", on_click=ask_insert_hint)
 
-# ▼ これを追加（ここで定義してから使う）
-c_send, c_new, c_show, c_dl = st.columns([1,1,1,1])
+# 5) コールバック外で反映
+if st.session_state["_insert_hint"]:
+    st.session_state["_insert_hint"] = False
+    st.session_state["user_input"] = STARTER_HINT
+    st.rerun()
 
-def on_send():
-    user_text = st.session_state.get("user_input", "").strip()
-    if not user_text:
-        return
-    floria_say(user_text)
-    st.session_state["user_input"] = ""
-    st.experimental_rerun()  # 互換性重視
-# c_send.button("送信", type="primary", on_click=on_send)
-if c_send.button("送信", type="primary"):
-    on_send()
+# ▼ 送信・その他ボタンの行
+c_send, c_new, c_show, c_dl = st.columns([1, 1, 1, 1])
+
+# 送信制御フラグの初期化
+if "_do_send" not in st.session_state:
+    st.session_state["_do_send"] = False
+if "_busy" not in st.session_state:
+    st.session_state["_busy"] = False
+
+# 送信ボタン（実行はメインループ側で）
+if c_send.button("送信", type="primary", disabled=st.session_state["_busy"]):
+    st.session_state["_do_send"] = True
+
+# ここで送信処理を安全に実行（コールバック外）
+if st.session_state["_do_send"] and not st.session_state["_busy"]:
+    st.session_state["_do_send"] = False
+    st.session_state["_busy"] = True
+    try:
+        user_text = st.session_state.get("user_input", "").strip()
+        if user_text:
+            floria_say(user_text)
+        # 入力欄をクリア
+        st.session_state["user_input"] = ""
+    finally:
+        st.session_state["_busy"] = False
+        st.rerun()  # 古い環境なら st.experimental_rerun() でもOK
 
 # 🌀 新しい会話を始める
-if c_new.button("新しい会話を始める", use_container_width=True):
+if c_new.button("新しい会話を始める", use_container_width=True, disabled=st.session_state["_busy"]):
     base_sys = st.session_state.messages[0]  # system は維持
     st.session_state.messages = [base_sys]
     st.session_state["user_input"] = ""
-    st.experimental_rerun()
+    st.rerun()
 
 # 📜 最近10件を表示
-if c_show.button("最近10件を表示", use_container_width=True):
+if c_show.button("最近10件を表示", use_container_width=True, disabled=st.session_state["_busy"]):
     st.info("最近10件の会話を下に表示します。")
-    recent = [m for m in st.session_state.messages if m["role"] in ("user","assistant")][-10:]
+    recent = [m for m in st.session_state.messages if m["role"] in ("user", "assistant")][-10:]
     for m in recent:
         role = "あなた" if m["role"] == "user" else "フローリア"
         st.write(f"**{role}**：{m['content'].strip()}")
 
 # 💾 JSON保存
-if c_dl.button("会話ログを保存（JSON）", use_container_width=True):
+if c_dl.button("会話ログを保存（JSON）", use_container_width=True, disabled=st.session_state["_busy"]):
     js = json.dumps(st.session_state.messages, ensure_ascii=False, indent=2)
     st.download_button("JSON をダウンロード", js, file_name="floria_chat_log.json", mime="application/json")
-
-st.caption("© Floria — water & ice spirit. Powered by Streamlit + OpenRouter + floria-snippets")
