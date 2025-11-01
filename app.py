@@ -147,9 +147,14 @@ for m in dialog:
         st.markdown(f"<div class='chat-bubble assistant'><b>フローリア：</b><br>{txt}</div>", unsafe_allow_html=True)
 
 # ============ 入力欄（送信後に自動クリア！） ============
+# 1) 先にヒント文字列
 STARTER_HINT = "……白い霧の向こうに気配がする。そこにいるのは誰？"
-st.markdown("---")
 
+# 2) 入力欄の直前 or 直後どちらでもOK（テキストエリアはこの後にあること）
+def insert_hint():
+    st.session_state["user_input"] = STARTER_HINT
+
+# 3) 入力欄
 st.text_area(
     "あなたの言葉（複数行OK・空行不要）",
     key="user_input",
@@ -158,30 +163,30 @@ st.text_area(
     label_visibility="visible",
 )
 
-# 入力欄の下に小さな補助ボタン（自動送信はしない）
+# 4) ボタンは on_click でコールバックを指定
 hint_col, _ = st.columns([1,3])
-if hint_col.button("ヒントを入力欄に挿入"):
-    st.session_state["user_input"] = STARTER_HINT
-    st.rerun()
+hint_col.button("ヒントを入力欄に挿入", on_click=insert_hint)
+
+# ▼ これを追加（ここで定義してから使う）
+c_send, c_new, c_show, c_dl = st.columns([1,1,1,1])
 
 def on_send():
     user_text = st.session_state.get("user_input", "").strip()
     if not user_text:
         return
     floria_say(user_text)
-    # 入力欄を空にして安全に再描画
     st.session_state["user_input"] = ""
-    st.rerun()  # 古い環境なら st.experimental_rerun()
-
-c_send, c_new, c_show, c_dl = st.columns([1,1,1,1])
-c_send.button("送信", type="primary", on_click=on_send)
+    st.experimental_rerun()  # 互換性重視
+# c_send.button("送信", type="primary", on_click=on_send)
+if c_send.button("送信", type="primary"):
+    on_send()
 
 # 🌀 新しい会話を始める
 if c_new.button("新しい会話を始める", use_container_width=True):
     base_sys = st.session_state.messages[0]  # system は維持
     st.session_state.messages = [base_sys]
     st.session_state["user_input"] = ""
-    st.rerun()
+    st.experimental_rerun()
 
 # 📜 最近10件を表示
 if c_show.button("最近10件を表示", use_container_width=True):
