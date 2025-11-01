@@ -5,17 +5,19 @@ import json
 import requests
 import streamlit as st
 
+# --- session state init ---
+if "user_input" not in st.session_state:
+    st.session_state["user_input"] = ""
+
 # ============ ページ設定（横幅ひろびろ） ============
 st.set_page_config(page_title="Floria Chat", layout="wide")
 
-# ちょい整形（可読性アップ）
 st.markdown("""
 <style>
-.chat-bubble { padding: .8rem 1rem; border-radius: .7rem; margin:.35rem 0; white-space:pre-wrap; word-break:break-word; line-height:1.6; }
-.user       { background:#f0f2f6; }
-.assistant  { background:#e8f6ff; }
-.sysnote    { color:#6b7280; font-size:.9em; }
-h1, h2 { letter-spacing:.02em; }
+/* 本文の最大幅を拡げる */
+.block-container { max-width: 1100px; padding-left: 2rem; padding-right: 2rem; }
+/* チャット気泡の横幅も拡張（任意） */
+.chat-bubble { max-width: 900px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -34,7 +36,6 @@ if not API:
 
 # ============ 会話状態 ============
 if "messages" not in st.session_state:
-    # 最初のプロンプト（パッケージ floria-snippets を使わない最小版）
     SYSTEM_PROMPT = (
         "あなたは『フローリア』。水と氷の精霊の乙女。"
         "口調は穏やかで知的、ややツンデレ。描写は上品。"
@@ -42,7 +43,6 @@ if "messages" not in st.session_state:
         "見出しや箇条書きは使わない。"
     )
     STARTER_USER_MSG = "はじめまして、フローリア。いま話せるかな？"
-
     st.session_state.messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user",   "content": STARTER_USER_MSG},
@@ -77,7 +77,6 @@ def floria_say(user_text: str):
             },
             timeout=60
         )
-        # JSON 化
         try:
             data = resp.json()
         except Exception:
@@ -101,13 +100,11 @@ def floria_say(user_text: str):
 
 # ============ UI：会話欄 ============
 st.subheader("会話")
-# 直近のみを見やすく（systemは非表示）
 dialog = [m for m in st.session_state.messages if m["role"] in ("user","assistant")]
 
 for m in dialog:
     role = m["role"]
     txt  = m["content"].strip()
-    # 折り返しを CSS に任せつつ幅広で表示
     if role == "user":
         st.markdown(f"<div class='chat-bubble user'><b>あなた：</b><br>{txt}</div>", unsafe_allow_html=True)
     else:
@@ -115,22 +112,28 @@ for m in dialog:
 
 # ============ 入力欄（送信後に自動クリア！） ============
 st.markdown("---")
-user_input = st.text_area("あなたの言葉（複数行OK・空行不要）", key="user_input", height=140)
+user_input = st.text_area(
+    "あなたの言葉（複数行OK・空行不要）",
+    key="user_input",
+    height=160,
+    label_visibility="visible",
+)
 
 c_send, c_new, c_show, c_dl = st.columns([1,1,1,1])
-do_send = c_send.button("送信", use_container_width=True)
 
-if do_send and user_input.strip():
-    floria_say(user_input.strip())
-    st.session_state.user_input = ""  # ← 送信後にクリア
-    st.rerun()
+if c_send.button("送信", type="primary"):
+    user_text = st.session_state["user_input"].strip()
+    if user_text:
+        floria_say(user_text)
+        st.session_state["user_input"] = ""  # 入力欄を空に
+        st.rerun()
 
 # 便利ボタン
 if c_new.button("新しい会話を始める", use_container_width=True):
     base_sys = st.session_state.messages[0]  # system は維持
     st.session_state.messages = [base_sys]
     st.session_state.messages.append({"role":"user", "content": "はじめまして、フローリア。いま話せるかな？"})
-    st.session_state.user_input = ""
+    st.session_state["user_input"] = ""
     st.rerun()
 
 if c_show.button("最近10件を表示", use_container_width=True):
