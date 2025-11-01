@@ -1,80 +1,71 @@
-# -*- coding: utf-8 -*-
-import os, re, json, textwrap, requests
+# app.py — Floria Chat (Streamlit Edition, wide & auto-clear)
+
+import os
+import json
+import requests
 import streamlit as st
 
-# =========================
-# 設定：Secrets優先→環境変数→デフォルト
-# =========================
-def getenv(name, default=""):
-    # Streamlit Cloud の場合は st.secrets を優先
-    if name in st.secrets:
-        return st.secrets[name]
-    return os.getenv(name, default)
+# ============ ページ設定（横幅ひろびろ） ============
+st.set_page_config(page_title="Floria Chat", layout="wide")
 
-BASE  = getenv("LLAMA_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
-MODEL = getenv("LLAMA_MODEL", "meta-llama/llama-3.1-70b-instruct")
-API   = getenv("LLAMA_API_KEY", "")
+# ちょい整形（可読性アップ）
+st.markdown("""
+<style>
+.chat-bubble { padding: .8rem 1rem; border-radius: .7rem; margin:.35rem 0; white-space:pre-wrap; word-break:break-word; line-height:1.6; }
+.user       { background:#f0f2f6; }
+.assistant  { background:#e8f6ff; }
+.sysnote    { color:#6b7280; font-size:.9em; }
+h1, h2 { letter-spacing:.02em; }
+</style>
+""", unsafe_allow_html=True)
 
-# /api/v1 を必ず付与
+# ============ シークレット読み込み ============
+API  = st.secrets.get("LLAMA_API_KEY", os.getenv("LLAMA_API_KEY", ""))
+BASE = st.secrets.get("LLAMA_BASE_URL", os.getenv("LLAMA_BASE_URL", "https://openrouter.ai/api/v1")).rstrip("/")
+MODEL= st.secrets.get("LLAMA_MODEL",  os.getenv("LLAMA_MODEL",  "meta-llama/llama-3.1-70b-instruct"))
+
+# /api/v1 が末尾に無ければ補完
 if not BASE.endswith("/api/v1"):
     BASE = BASE + ("/v1" if BASE.endswith("/api") else "/api/v1")
 
-# =========================
-# フローリア人格（pip: floria-snippets）
-# =========================
-try:
-    from floria_snippets import SYSTEM_PROMPT, STARTER_USER_MSG
-except Exception:
-    # フォールバック（念のため）
-    SYSTEM_PROMPT = """あなたは「フローリア」。水と氷を司る精霊の少女。
-口調はやわらかく丁寧。「自然現象」をたとえに感情を表す。
-北方の永久凍土「リュミエール氷窟」に封じられていたが、いま目覚めた。
-人と共に生きる道を学びたい。"""
-    STARTER_USER_MSG = "はじめまして、フローリア。いまの気分はどう？"
+if not API:
+    st.error("LLAMA_API_KEY が未設定です。Streamlit → Settings → Secrets で設定してください。")
+    st.stop()
 
-STYLE_GUARD = "出力は素の文章。行頭に装飾記号（*,・,•,★ など）を付けない。見出しや箇条書きは使わない。"
-SYSTEM_ALL  = SYSTEM_PROMPT + "\n" + STYLE_GUARD
-
-# =========================
-# 表示ユーティリティ
-# =========================
-WRAP = 30
-CLEAN_HEAD = re.compile(r"^[\s\ufeff\*･・•★☆#,'’\"`\-]+")
-
-def clean_reply(text: str) -> str:
-    if not text:
-        return text
-    text = text.replace("*',*", "")
-    lines = [CLEAN_HEAD.sub("", line) for line in text.splitlines()]
-    return "\n".join(lines).strip()
-
-def wrap_text(text: str, width: int = WRAP) -> str:
-    return textwrap.fill(text.strip(), width=width)
-
-# =========================
-# セッション初期化
-# =========================
+# ============ 会話状態 ============
 if "messages" not in st.session_state:
+    # 最初のプロンプト（パッケージ floria-snippets を使わない最小版）
+    SYSTEM_PROMPT = (
+        "あなたは『フローリア』。水と氷の精霊の乙女。"
+        "口調は穏やかで知的、ややツンデレ。描写は上品。"
+        "出力は素の文章。行頭に装飾記号（*,・,•,★ など）を付けない。"
+        "見出しや箇条書きは使わない。"
+    )
+    STARTER_USER_MSG = "はじめまして、フローリア。いま話せるかな？"
+
     st.session_state.messages = [
-        {"role": "system", "content": SYSTEM_ALL},
+        {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user",   "content": STARTER_USER_MSG},
     ]
-if "just_loaded" not in st.session_state:
-    st.session_state.just_loaded = False
 
-# =========================
-# API 呼び出し
-# =========================
-def floria_say(user_text: str, temperature: float = 0.7, max_tokens: int = 300) -> str:
-    st.session_state.messages.append({"role": "user", "content": user_text})
+# ============ パラメータ ============
+st.title("❄️ Floria Chat — Streamlit Edition")
 
+with st.expander("接続設定", expanded=False):
+    c1, c2, c3 = st.columns(3)
+    temperature = c1.slider("temperature", 0.0, 1.5, 0.70, 0.05)
+    max_tokens  = c2.slider("max_tokens", 64, 2048, 300, 16)
+    wrap_width  = c3.slider("折り返し幅", 20, 100, 80, 1)
+
+# ============ 送信関数 ============
+def floria_say(user_text: str):
+    st.session_state.messages.append({"role":"user","content": user_text})
     try:
         resp = requests.post(
             f"{BASE}/chat/completions",
             headers={
                 "Authorization": f"Bearer {API}",
                 "Content-Type": "application/json",
-                # OpenRouter系は付けておくと親切（任意）
                 "HTTP-Referer": "https://streamlit.io",
                 "X-Title": "Floria-Streamlit",
             },
@@ -82,95 +73,75 @@ def floria_say(user_text: str, temperature: float = 0.7, max_tokens: int = 300) 
                 "model": MODEL,
                 "messages": st.session_state.messages,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_tokens": max_tokens
             },
-            timeout=60,
+            timeout=60
         )
+        # JSON 化
         try:
             data = resp.json()
         except Exception:
             data = None
 
         if resp.status_code != 200:
-            err_msg = (data.get("error", {}).get("message") or data.get("message") or resp.text[:400]) if isinstance(data, dict) else resp.text[:400]
-            a = f"（ごめんなさい、冷たい霧で声が届きません… {resp.status_code}: {err_msg}）"
+            err = (data.get("error", {}).get("message") or data.get("message") or resp.text[:500]) if isinstance(data, dict) else resp.text[:500]
+            a = f"（ごめんなさい、冷たい霧で声が届きません… {resp.status_code}: {err}）"
         else:
-            a = data["choices"][0]["message"]["content"] if isinstance(data, dict) and data.get("choices") else f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）"
+            if isinstance(data, dict) and data.get("choices"):
+                a = data["choices"][0]["message"]["content"]
+            else:
+                a = f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）"
 
     except requests.exceptions.Timeout:
         a = "（回線が凍りついてしまったみたい…少ししてからもう一度お願いします）"
     except Exception as e:
         a = f"（思わぬ渦に巻き込まれました…: {e}）"
 
-    st.session_state.messages.append({"role": "assistant", "content": a})
-    return a
+    st.session_state.messages.append({"role":"assistant","content": a})
 
-def show_recent(n: int = 10):
-    dialog = [m for m in st.session_state.messages if m["role"] in ("user", "assistant")]
-    recent = dialog[-n:]
-    if not recent:
-        st.info("表示できる会話がありません。")
-        return
-    st.markdown(f"🧾 **最近の会話（{len(recent)}件）**")
+# ============ UI：会話欄 ============
+st.subheader("会話")
+# 直近のみを見やすく（systemは非表示）
+dialog = [m for m in st.session_state.messages if m["role"] in ("user","assistant")]
+
+for m in dialog:
+    role = m["role"]
+    txt  = m["content"].strip()
+    # 折り返しを CSS に任せつつ幅広で表示
+    if role == "user":
+        st.markdown(f"<div class='chat-bubble user'><b>あなた：</b><br>{txt}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='chat-bubble assistant'><b>フローリア：</b><br>{txt}</div>", unsafe_allow_html=True)
+
+# ============ 入力欄（送信後に自動クリア！） ============
+st.markdown("---")
+user_input = st.text_area("あなたの言葉（複数行OK・空行不要）", key="user_input", height=140)
+
+c_send, c_new, c_show, c_dl = st.columns([1,1,1,1])
+do_send = c_send.button("送信", use_container_width=True)
+
+if do_send and user_input.strip():
+    floria_say(user_input.strip())
+    st.session_state.user_input = ""  # ← 送信後にクリア
+    st.rerun()
+
+# 便利ボタン
+if c_new.button("新しい会話を始める", use_container_width=True):
+    base_sys = st.session_state.messages[0]  # system は維持
+    st.session_state.messages = [base_sys]
+    st.session_state.messages.append({"role":"user", "content": "はじめまして、フローリア。いま話せるかな？"})
+    st.session_state.user_input = ""
+    st.rerun()
+
+if c_show.button("最近10件を表示", use_container_width=True):
+    st.info("最近10件の会話を下に表示します。")
+    recent = dialog[-10:]
     for m in recent:
-        role = "あなた" if m["role"] == "user" else "❄️フローリア"
-        txt  = clean_reply(m["content"]) if m["role"] == "assistant" else m["content"]
-        st.write(f"**{role}:**")
-        st.code(wrap_text(txt), language=None)
+        role = "あなた" if m["role"]=="user" else "フローリア"
+        st.write(f"**{role}**：{m['content'].strip()}")
 
-def reset_dialog():
-    st.session_state.messages = [
-        {"role": "system", "content": SYSTEM_ALL},
-        {"role": "user",   "content": STARTER_USER_MSG},
-    ]
-    st.session_state.just_loaded = False
-
-# =========================
-# UI
-# =========================
-st.set_page_config(page_title="Floria Chat (Streamlit)", page_icon="❄️", layout="centered")
-st.title("❄️ Floria Chat — Streamlit Edition")
-
-with st.expander("接続設定", expanded=False):
-    st.caption("※初回はここで確認してから使ってください。キーは Secrets に入れておくのが安全です。")
-    st.text_input("BASE", value=BASE, disabled=True)
-    st.text_input("MODEL", value=MODEL, disabled=True)
-    st.text_input("API（先頭のみ表示）", value=(API[:8] + "…") if API else "(未設定)", disabled=True)
-
-colA, colB, colC = st.columns(3)
-with colA:
-    temperature = st.slider("temperature", 0.0, 1.5, 0.7, 0.1)
-with colB:
-    max_tokens  = st.slider("max_tokens", 64, 1024, 300, 32)
-with colC:
-    wrap_width  = st.slider("折り返し幅", 20, 80, WRAP, 2)
-
-# 折り返し幅を反映
-WRAP = wrap_width
-
-st.divider()
-
-with st.form("chat"):
-    user_text = st.text_area("あなたの言葉（複数行OK・空行不要）", height=140)
-    submitted = st.form_submit_button("送信")
-    if submitted and user_text.strip():
-        reply = floria_say(user_text.strip(), temperature, max_tokens)
-        st.success("❄️ フローリア：")
-        st.code(wrap_text(clean_reply(reply)), language=None)
-
-st.divider()
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("最近10件を表示"):
-        show_recent(10)
-with col2:
-    if st.button("新しい会話を始める"):
-        reset_dialog()
-        st.info("会話をリセットしました。")
-with col3:
-    # JSON ダウンロード
-    json_bytes = json.dumps(st.session_state.messages, ensure_ascii=False, indent=2).encode("utf-8")
-    st.download_button("会話ログを保存（JSON）", data=json_bytes, file_name="floria_chatlog.json", mime="application/json")
+if c_dl.button("会話ログを保存（JSON）", use_container_width=True):
+    js = json.dumps(st.session_state.messages, ensure_ascii=False, indent=2)
+    st.download_button("JSON をダウンロード", js, file_name="floria_chat_log.json", mime="application/json")
 
 st.caption("© Floria — water & ice spirit. Powered by Streamlit + OpenRouter + floria-snippets")
