@@ -1,9 +1,6 @@
 # app.py — Floria Chat (Streamlit Edition, wide & auto-clear)
 
-import os
-import json
-import requests
-import streamlit as st
+import os, json, requests, html, streamlit as st
 
 # --- session state init ---
 if "user_input" not in st.session_state:
@@ -32,6 +29,16 @@ st.markdown("""
 .chat-bubble.assistant { background: #eaf7ff; }
 </style>
 """, unsafe_allow_html=True)
+
+# --- special keys init (must come before any UI that references them) ---
+DEFAULTS = {
+    "_busy": False,
+    "_do_send": False,
+    "_pending_text": "",
+}
+for k, v in DEFAULTS.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 # ============ シークレット読み込み ============
 API  = st.secrets.get("LLAMA_API_KEY", os.getenv("LLAMA_API_KEY", ""))
@@ -79,79 +86,79 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 def _post_with_retry(url, headers, payload, timeout):
-    for i in range(2):
-        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    # 429/502だけ軽いリトライ（合計最大2回）
+    for _ in range(2):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        except requests.exceptions.RequestException as e:
+            # ネットワーク例外はそのまま擬似レスポンス化
+            class R:
+                status_code = 599
+                text = str(e)
+                def json(self):
+                    return None
+            return R()
         if resp.status_code not in (429, 502):
             return resp
-    return resp  # 最後の応答を返す
+    return resp  # 最後の応答
 
-# ============ 送信関数 ============
 def floria_say(user_text: str):
-    # ユーザー発言を履歴に追加
+    # 1) ログ肥大対策（送る直前に丸める）
+    MAX_LOG = 500
+    if len(st.session_state.messages) > MAX_LOG:
+        base_sys = st.session_state.messages[0]
+        st.session_state.messages = [base_sys] + st.session_state.messages[-(MAX_LOG-1):]
+
+    # 2) ユーザー発言を履歴に追加
     st.session_state.messages.append({"role": "user", "content": user_text})
 
-    # 直近だけを送る（system は先頭に残す）
+    # 3) 直近だけ送る（systemは先頭に）
     base = st.session_state.messages
     to_send = [base[0]] + base[-40:]
 
-    resp = _post_with_retry(
-        f"{BASE}/chat/completions",
-        headers={ ... },
-        payload={
-            "model": MODEL,
-            "messages": to_send,
-            "temperature": float(temperature),
-            "max_tokens": int(max_tokens),
-        },
-        timeout=(10, 60),
-    )
+    headers = {
+        "Authorization": f"Bearer {API}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "HTTP-Referer": "https://streamlit.io",
+        "X-Title": "Floria-Streamlit",
+    }
+    payload = {
+        "model": MODEL,
+        "messages": to_send,
+        "temperature": float(temperature),
+        "max_tokens": int(max_tokens),
+    }
 
+    # 4) リトライ付きで“1回だけ”送る
+    with st.spinner("フローリアが考えています…"):
+        resp = _post_with_retry(f"{BASE}/chat/completions", headers, payload, timeout=(10, 60))
+
+    # 5) パースとエラーハンドリング
     try:
-        with st.spinner("フローリアが考えています…"):
-            resp = requests.post(
-                f"{BASE}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {API}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://streamlit.io",
-                    "X-Title": "Floria-Streamlit",
-                },
-                json={
-                    "model": MODEL,
-                    "messages": to_send,
-                    "temperature": float(temperature),
-                    "max_tokens": int(max_tokens),
-                },
-                timeout=(10, 60)
-            )
+        data = resp.json()
+    except Exception:
+        data = None
 
-        # できるだけ安全にパース
-        try:
-            data = resp.json()
-        except Exception:
-            data = None
-
-        if resp.status_code != 200:
+    if getattr(resp, "status_code", 599) != 200:
+        code = getattr(resp, "status_code", 599)
+        if code in (401, 403):
+            a = "（認証に失敗しました。LLAMA_API_KEY を確認してください）"
+        else:
             if isinstance(data, dict):
                 err = data.get("error", {}).get("message") or data.get("message") or str(data)
             else:
-                err = resp.text[:500]
-            a = f"（ごめんなさい、冷たい霧で声が届きません… {resp.status_code}: {err}）"
-        else:
-            a = ""
-            if isinstance(data, dict) and data.get("choices"):
-                a = data["choices"][0].get("message", {}).get("content", "") or ""
-            if not a:
-                a = f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）"
+                err = getattr(resp, "text", "")[:500]
+            a = f"（ごめんなさい、冷たい霧で声が届きません… {code}: {err}）"
+    else:
+        a = ""
+        if isinstance(data, dict) and data.get("choices"):
+            a = data["choices"][0].get("message", {}).get("content", "") or ""
+        if not a:
+            a = f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）"
 
-    except requests.exceptions.Timeout:
-        a = "（回線が凍りついてしまったみたい…少ししてからもう一度お願いします）"
-    except Exception as e:
-        a = f"（思わぬ渦に巻き込まれました…: {e}）"
-
-    # アシスタント発言を履歴に追加
+    # 6) アシスタント発言を履歴に追加（← 成功/失敗に関わらずここで1回だけ）
     st.session_state.messages.append({"role": "assistant", "content": a})
-    
 # ============ UI：会話欄 ============
 st.subheader("会話")
 dialog = [m for m in st.session_state.messages if m["role"] in ("user","assistant")]
@@ -167,21 +174,12 @@ for m in dialog:
 # ============ 入力欄（送信後に自動クリア！） ============
 STARTER_HINT = "……白い霧の向こうに気配がする。そこにいるのは誰？"
 
-# --- ヒント挿入フラグ（初期化） ---
-if "_insert_hint" not in st.session_state:
-    st.session_state["_insert_hint"] = False
-
-# ヒント挿入ボタン（クリックでフラグONにするだけ）
+# （テキストエリアより前に）ヒントボタンを置く
 hint_col, _ = st.columns([1, 3])
 if hint_col.button("ヒントを入力欄に挿入", disabled=st.session_state["_busy"]):
-    st.session_state["_insert_hint"] = True
+    st.session_state["user_input"] = STARTER_HINT  # ← その場で代入、rerun不要
 
-# ★ テキストエリアを描画する前に user_input を更新！
-if st.session_state["_insert_hint"]:
-    st.session_state["_insert_hint"] = False
-    st.session_state["user_input"] = STARTER_HINT
-
-# テキストエリア本体
+# 入力欄本体
 st.text_area(
     "あなたの言葉（複数行OK・空行不要）",
     key="user_input",
@@ -189,11 +187,6 @@ st.text_area(
     placeholder=(STARTER_HINT if st.session_state.get("show_hint") else ""),
     label_visibility="visible",
 )
-
-MAX_LOG = 500  # 任意
-if len(st.session_state.messages) > MAX_LOG:
-    base_sys = st.session_state.messages[0]
-    st.session_state.messages = [base_sys] + st.session_state.messages[-(MAX_LOG-1):]
 
 # ▼ 送信・その他ボタン
 c_send, c_new, c_show, c_dl = st.columns([1, 1, 1, 1])
