@@ -74,10 +74,16 @@ with st.expander("接続設定", expanded=False):
     max_tokens  = c2.slider("max_tokens", 64, 2048, 300, 16)
     wrap_width  = c3.slider("折り返し幅", 20, 100, 80, 1)
 # スライダーの値でチャット幅を動的反映（文字数基準）
-st.markdown(
-    f"<style>.chat-bubble {{ max-width: {wrap_width}ch; }}</style>",
-    unsafe_allow_html=True
-)
+st.markdown(f"""
+<style>.chat-bubble {{ max-width: min(90vw, {wrap_width}ch); }}</style>
+""", unsafe_allow_html=True)
+
+def _post_with_retry(url, headers, payload, timeout):
+    for i in range(2):
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        if resp.status_code not in (429, 502):
+            return resp
+    return resp  # 最後の応答を返す
 
 # ============ 送信関数 ============
 def floria_say(user_text: str):
@@ -87,6 +93,18 @@ def floria_say(user_text: str):
     # 直近だけを送る（system は先頭に残す）
     base = st.session_state.messages
     to_send = [base[0]] + base[-40:]
+
+    resp = _post_with_retry(
+        f"{BASE}/chat/completions",
+        headers={ ... },
+        payload={
+            "model": MODEL,
+            "messages": to_send,
+            "temperature": float(temperature),
+            "max_tokens": int(max_tokens),
+        },
+        timeout=(10, 60),
+    )
 
     try:
         with st.spinner("フローリアが考えています…"):
@@ -140,24 +158,30 @@ dialog = [m for m in st.session_state.messages if m["role"] in ("user","assistan
 
 for m in dialog:
     role = m["role"]
-    txt  = m["content"].strip()
+    txt  = html.escape(m["content"].strip())  # ← 追加
     if role == "user":
         st.markdown(f"<div class='chat-bubble user'><b>あなた：</b><br>{txt}</div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<div class='chat-bubble assistant'><b>フローリア：</b><br>{txt}</div>", unsafe_allow_html=True)
 
 # ============ 入力欄（送信後に自動クリア！） ============
-# 1) 先にヒント文字列
 STARTER_HINT = "……白い霧の向こうに気配がする。そこにいるのは誰？"
 
-# 2) ヒント挿入フラグ
+# --- ヒント挿入フラグ（初期化） ---
 if "_insert_hint" not in st.session_state:
     st.session_state["_insert_hint"] = False
 
-def ask_insert_hint():
+# ヒント挿入ボタン（クリックでフラグONにするだけ）
+hint_col, _ = st.columns([1, 3])
+if hint_col.button("ヒントを入力欄に挿入", disabled=st.session_state["_busy"]):
     st.session_state["_insert_hint"] = True
 
-# 3) 入力欄（そのまま）
+# ★ テキストエリアを描画する前に user_input を更新！
+if st.session_state["_insert_hint"]:
+    st.session_state["_insert_hint"] = False
+    st.session_state["user_input"] = STARTER_HINT
+
+# テキストエリア本体
 st.text_area(
     "あなたの言葉（複数行OK・空行不要）",
     key="user_input",
@@ -166,17 +190,12 @@ st.text_area(
     label_visibility="visible",
 )
 
-# 4) ボタン：on_click ではフラグだけ立てる
-hint_col, _ = st.columns([1,3])
-hint_col.button("ヒントを入力欄に挿入", on_click=ask_insert_hint)
+MAX_LOG = 500  # 任意
+if len(st.session_state.messages) > MAX_LOG:
+    base_sys = st.session_state.messages[0]
+    st.session_state.messages = [base_sys] + st.session_state.messages[-(MAX_LOG-1):]
 
-# 5) コールバック外で反映
-if st.session_state["_insert_hint"]:
-    st.session_state["_insert_hint"] = False
-    st.session_state["user_input"] = STARTER_HINT
-    st.rerun()
-
-# ▼ 送信・その他ボタンの行
+# ▼ 送信・その他ボタン
 c_send, c_new, c_show, c_dl = st.columns([1, 1, 1, 1])
 
 # 送信制御フラグの初期化
@@ -184,24 +203,30 @@ if "_do_send" not in st.session_state:
     st.session_state["_do_send"] = False
 if "_busy" not in st.session_state:
     st.session_state["_busy"] = False
+if "_pending_text" not in st.session_state:
+    st.session_state["_pending_text"] = ""
 
-# 送信ボタン（実行はメインループ側で）
+# 送信ボタン（押下時に即クリア → 非同期風に処理）
 if c_send.button("送信", type="primary", disabled=st.session_state["_busy"]):
-    st.session_state["_do_send"] = True
+    txt = st.session_state.get("user_input", "").strip()
+    if txt:
+        st.session_state["_pending_text"] = txt
+        st.session_state["user_input"] = ""   # ← 入力欄をすぐ空にする
+        st.session_state["_do_send"] = True
+        st.rerun()                            # ← 空欄状態を即反映
 
-# ここで送信処理を安全に実行（コールバック外）
+# 送信処理（UI更新後に安全実行）
 if st.session_state["_do_send"] and not st.session_state["_busy"]:
     st.session_state["_do_send"] = False
     st.session_state["_busy"] = True
     try:
-        user_text = st.session_state.get("user_input", "").strip()
-        if user_text:
-            floria_say(user_text)
-        # 入力欄をクリア
-        st.session_state["user_input"] = ""
+        txt = st.session_state.get("_pending_text", "")
+        st.session_state["_pending_text"] = ""
+        if txt:
+            floria_say(txt)
     finally:
         st.session_state["_busy"] = False
-        st.rerun()  # 古い環境なら st.experimental_rerun() でもOK
+        st.rerun()
 
 # 🌀 新しい会話を始める
 if c_new.button("新しい会話を始める", use_container_width=True, disabled=st.session_state["_busy"]):
