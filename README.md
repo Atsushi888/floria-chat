@@ -1,206 +1,67 @@
-# ❄️ Floria Chat – 水と氷の精霊フローリアと語らうAIアプリ
+# Floria Chat — Streamlit Edition
 
-ようこそ、**Floria Chat** へ。  
-水と氷の精霊「フローリア」とブラウザ上で語らえる、軽量AIチャットアプリです。  
-インストール不要、**10分であなたの環境に導入**できます。
+水と氷の精霊フローリアと語らう、軽量なチャットアプリです。  
+OpenRouter 経由で Llama（等のモデル）に接続して動作します。
 
----
-
-## 🌸 Floria Chatとは？
-
-- 💬 ChatGPTのような自然対話（日本語対応）
-- ☁️ **Streamlit Community Cloud** でワンクリック公開
-- 🧠 **LLaMA 3.1 (OpenRouter)** 経由で動作
-- ⚙️ 温度・トークン・折り返し幅など調整可能
-- 🧹 入力欄は**送信後に自動クリア**
-- 💾 会話ログを**JSON形式で保存**
-
-> インストールもサーバーも不要。  
-> あなたのブラウザ上で精霊フローリアが語りかけます。
+> **注意**: 初回起動時、**入力欄にヒントは表示されません**（仕様）。  
+> 画面左の「世界観とあなたの役割」→「入力ヒントを表示する」にチェックを入れるか、下部の「ヒントを入力欄に挿入」ボタンを押すとヒントを出せます。
 
 ---
 
-## 🚀 はじめかた（10分で完了）
+# はじめかた（Streamlit Cloud 版・iPad対応詳解）
 
-### 0️⃣ 無料アカウントを準備
-| サービス | 用途 | 登録リンク |
-|-----------|------|-------------|
-| 🐙 GitHub | ソースコード保存 | https://github.com/signup |
-| ☁️ Streamlit Cloud | アプリ実行環境 | https://streamlit.io/cloud |
-| 🧠 OpenRouter | LLaMA APIキー発行 | https://openrouter.ai/ |
+> 事前に：OpenRouter（Llamaの中継サービス）でアカウント作成＆クレジット追加が必要です。  
+> ダッシュボードでAPIキーを発行しておきましょう。
 
----
+## 1) アプリをデプロイする
 
-### 1️⃣ アプリをデプロイする
-1. https://streamlit.io/cloud にログイン  
-2. 右上の **New app** をクリック  
-3. 次の設定で **Deploy**：
+1. **Streamlit Cloud にログイン** → 上部タブの **My apps** を開く。  
+2. 右上の **Create app** をタップ。  
+3. 「What would you like to do?」で**左のカード**  
+   **“Deploy a public app from GitHub”** を選ぶ。  
+4. **Deploy an app** 画面で次を入力：
+   - **Repository**：`Atsushi888/floria-chat`（あなたのフォーク名に読み替え可）
+   - **Branch**：`main`
+   - **Main file path**：`app_multilang.py`（多言語版）  
+     ※ベーシック版で出すなら `app.py`
+   - （任意）**App URL**：好きなサブドメイン名
+5. そのまま **Deploy**。ビルド〜起動が走ります（数分）。
 
-| 設定項目 | 値 |
-|-----------|----|
-| Repository | Atsushi888/floria-chat |
-| Branch | main |
-| Main file path | app.py |
+## 2) シークレット（APIキー）をセットする
 
-初回ビルドには約30〜60秒かかります。  
-完了後、自動でアプリが起動します。
+起動後に画面右下 **Manage app** → **Settings** → **Secrets** を開き、下の3行を**丸ごとコピペ**して保存。  
+（**必ず**ダブルクォーテーション `"` を含めてください。スマート引用符 “ ” は不可）
 
----
-
-### 2️⃣ APIキーを登録（Secrets）
-
-1. アプリ右上の **⋮ → Settings → Secrets** を開きます。  
-2. 下の内容を**そのままコピペ**して保存します：
-
-```
-LLAMA_API_KEY = "あなたのOpenRouter_APIキー"
-LLAMA_BASE_URL = "https://openrouter.ai/api/v1"
-LLAMA_MODEL = "meta-llama/llama-3.1-70b-instruct"
-```
-
-⚠️ **iPad/iPhoneの方へ**  
-日本語キーボードで入力すると “全角クォート（“ ”）” になることがあります。  
-**このREADMEのコードブロックを直接コピー＆ペースト** してください。  
-半角の `"`（ダブルクォーテーション）を使うのがポイントです。
-
-3. 保存したら、左上の **Rerun** ボタンを押してください。  
-これでフローリアが応答を開始します。❄️
-
----
-
-## 💬 使い方
-
-- 下部の入力欄に話しかけて **送信**
-- 入力欄は送信後に自動クリア
-- 上部の「接続設定」で以下を変更できます：
-
-| 設定項目 | 説明 |
-|-----------|------|
-| temperature | 創造性（0.2〜0.9推奨） |
-| max_tokens | 返答最大長（大きすぎると遅くなる） |
-| 折り返し幅 | 吹き出し横幅の調整 |
-
----
-
-## 🌐 公開デモ（ユーザー自身のAPIキーが必要）
-
-このアプリは**あなたのOpenRouter APIキーを使って動作**します。  
-他人がアクセスしても、Secretsにキーを設定しない限り利用できません。
-
-### 💡 あなた自身のデモリンクを作る方法
-
-1. Streamlit Cloud のあなたのアプリ画面右上 → **Share** をクリック  
-2. 生成されたURLをコピー  
-3. READMEに以下のように追記：
-
-```
-## 🌐 公開デモ
-👉 https://floria-chat.streamlit.app/
-```
-
-このURLを他人に伝えると、  
-相手は自分の `LLAMA_API_KEY` を登録するだけでフローリアを起動できます。
-
-🧊 つまり、「他人にAPIキーを共有する必要がない」安全な公開方法です。
-
----
-
-## 🧠 モデルを切り替える
-
-Secrets の `LLAMA_MODEL` の値を変更することで、他モデルに対応できます：
-
-```
-LLAMA_MODEL = "meta-llama/llama-3.1-8b-instruct"
-```
-
-他のOpenRouterモデルも利用可能です。  
-対応一覧：https://openrouter.ai/models
-
----
-
-## 🧾 コストと制限（OpenRouter参考）
-
-| 項目 | 内容 |
-|------|------|
-| 無料枠 | モデルによってあり（登録時に付与） |
-| 有料課金 | 1,000トークンあたり数円〜十数円 |
-| 速度 | 軽量モデル：1〜2秒、70Bモデル：5〜10秒前後 |
-| 制限 | トークン超過時に 429 / 401 エラーが出ることあり |
-
----
-
-## ⚙️ トラブルシューティング
-
-| 症状 | 原因 | 対処 |
-|------|------|------|
-| LLAMA_API_KEY が未設定 | Secrets未設定 | Settings → Secrets で再設定 |
-| 401 / 403 エラー | APIキーの入力ミス・全角クォート | "（半角）で囲んで再保存 |
-| 返答が来ない | モデルが重い / トークン制限 | 軽いモデル or max_tokens を減らす |
-| Streamlit Cloudで失敗 | Repository/Branch/Pathの誤り | Atsushi888/floria-chat, main, app.py に修正 |
-
----
-
-## 💻 ローカル実行（開発者向け）
-
-```
-git clone https://github.com/Atsushi888/floria-chat.git
-cd floria-chat
-pip install -r requirements.txt
-```
-
-`.env` ファイルを作成して次を記入（ダブルクォート必須）：
-
-```
-LLAMA_API_KEY="YOUR_API_KEY"
+```ini
+LLAMA_API_KEY="sk-or-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 LLAMA_BASE_URL="https://openrouter.ai/api/v1"
 LLAMA_MODEL="meta-llama/llama-3.1-70b-instruct"
 ```
 
-その後：
+- `LLAMA_API_KEY` は OpenRouter で発行した **あなたのAPIキー** に置き換え。
+- iPadで `"` が打ちにくい場合は、**このブロックをコピーして x を置換**してください（引用符はそのまま）。
 
-```
-streamlit run app.py
-```
+保存したら、画面上部の **↻ Rerun**（またはページ再読み込み）でアプリを再起動します。
 
-`.env` の内容はコミットしないでください。  
-秘密情報は **環境変数 or Secrets** にのみ保存します。
+## 3) 使い方
 
----
+- 左サイドバーの **Language / 言語** で **日本語 / English** を切り替え可能。  
+- 「接続テスト（任意）」のボタンで 200 が返れば接続OK。  
+- テキストエリアに台詞や地の文を入れて **送信**。長文は自動継ぎ足し可。  
+- **新しい会話** は確認ダイアログ付き（履歴を消去）。
 
-## 🔒 セキュリティ注意
+## よくあるエラーと対処
 
-- APIキーは **Secrets / .env のみ** に保存  
-- 公開リポジトリに直書き禁止  
-- スクリーンショットや動画にキーが写らないよう注意  
-
----
-
-## 📦 依存関係
-
-```
-streamlit>=1.32
-requests>=2.31
-python-dotenv>=1.0
-```
+- 画面に赤いバナーで  
+  **「LLAMA_API_KEY が未設定です」**  
+  → **Secretsに3行を正確に貼れていない**可能性。`"` が “ ” になっていないか、空白や改行が増えていないか確認。
+- **401 / 403**  
+  → APIキーの打ち間違い／OpenRouter側のクレジット不足。OpenRouterのダッシュボードで残高を確認。
+- **英語切替で落ちる**  
+  → 古いキャッシュの可能性。ブラウザをリロード or **Rerun**。それでも出る場合は `Main file path` が `app_multilang.py` になっているか確認。
 
 ---
 
-## 📜 ライセンス
+## ライセンス
 
-MIT License  
-© 2025 Atsushi888 — Powered by Streamlit + OpenRouter
-
----
-
-## 💠 クレジット
-
-- App & UI: Atsushi888  
-- Tech assist: Luna (リリィ)  
-- Model: LLaMA 3.1 via OpenRouter  
-- Framework: Streamlit
-
-## 🌐 Multilingual version
-`app_multilang.py` supports both Japanese and English.
-You can switch the interface language from the top-right corner of the app.
-
-> “静かな氷の呼吸が、あなたの言葉に触れて微笑むとき——”
+MIT License（同梱の `LICENSE` を参照）
