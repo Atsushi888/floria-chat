@@ -174,6 +174,16 @@ def floria_say(user_text: str):
                 ch = data["choices"][0]
                 chunk = (ch.get("message", {}) or {}).get("content", "") or ""
                 reason = ch.get("finish_reason") or ((ch.get("finish_details") or {}).get("type"))
+            # --- レスポンス解析の直後などに追記 ---
+            if isinstance(data, dict):
+                meta = {
+                    "status": getattr(resp, "status_code", None),
+                    "finish": reason,
+                    "usage": data.get("usage", {}),
+                    "len_messages": len(convo),
+                    "model": MODEL,
+                }
+                st.session_state["_last_call_meta"] = meta
 
             if not chunk:
                 parts.append(f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）")
@@ -212,7 +222,14 @@ for m in dialog:
         st.markdown(f"<div class='chat-bubble user'><b>あなた：</b><br>{txt}</div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<div class='chat-bubble assistant'><b>フローリア：</b><br>{txt}</div>", unsafe_allow_html=True)
-        
+
+# ================== デバッグ情報表示（任意） ==================
+# 直近のAPI呼び出し結果（ステータスやトークン数など）を可視化できる
+show_dbg = st.checkbox("デバッグを表示", False)
+if show_dbg and "_last_call_meta" in st.session_state:
+    st.markdown("###### 最後の呼び出し情報")
+    st.json(st.session_state["_last_call_meta"])
+
 # ================== 入力欄 & ヒント ==================
 hint_col, _ = st.columns([1, 3])
 if hint_col.button("ヒントを入力欄に挿入", disabled=st.session_state["_busy"]):
