@@ -48,6 +48,10 @@ LANGS = {
         "LOAD_FAIL": "JSON の読み込みに失敗しました",
         "DBG_CHECK": "デバッグを表示",
         "DBG_HEADER": "最後の呼び出し情報",
+        "BTN_NEW_WARN": "新しい会話（履歴が消えます）",
+        "RESET_WARN": "会話履歴がすべて消えます。続行しますか？",
+        "RESET_YES": "はい、リセットする",
+        "RESET_NO": "やめる",
         "PING": "ping",
         "PONGQ": "pong?",
         "AUTH_MISSING": "LLAMA_API_KEY が未設定です。Streamlit → Settings → Secrets で設定してください。",
@@ -107,6 +111,10 @@ LANGS = {
         "LOAD_FAIL": "Failed to load JSON",
         "DBG_CHECK": "Show debug",
         "DBG_HEADER": "Last call meta",
+        "BTN_NEW_WARN": "Start New Conversation (clears history)",
+        "RESET_WARN": "This will erase the entire conversation history. Continue?",
+        "RESET_YES": "Yes, reset",
+        "RESET_NO": "Cancel",
         "PING": "ping",
         "PONGQ": "pong?",
         "AUTH_MISSING": "LLAMA_API_KEY is missing. Set it in Streamlit → Settings → Secrets.",
@@ -177,6 +185,7 @@ DEFAULTS = {
     "_pending_text": "",
     "_clear_input": False,
     "_do_reset": False,
+    "_ask_reset": False,   # ← 追加
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -445,9 +454,23 @@ if st.session_state["_do_send"] and not st.session_state["_busy"]:
         st.session_state["_busy"] = False
         st.rerun()
 
-if c_new.button(L["BTN_NEW"], use_container_width=True, disabled=st.session_state["_busy"]):
-    st.session_state["_do_reset"] = True
-    st.rerun()
+# 新しい会話（確認ダイアログ付き・多言語）
+if st.session_state.get("_ask_reset", False):
+    with st.container():
+        st.warning(L["RESET_WARN"])
+        cc1, cc2 = st.columns(2)
+        confirm = cc1.button(L["RESET_YES"], use_container_width=True)
+        cancel  = cc2.button(L["RESET_NO"],  use_container_width=True)
+        if confirm:
+            st.session_state["_do_reset"] = True
+            st.session_state["_ask_reset"] = False
+            st.rerun()
+        elif cancel:
+            st.session_state["_ask_reset"] = False
+else:
+    if c_new.button(L.get("BTN_NEW_WARN", L["BTN_NEW"]), use_container_width=True, disabled=st.session_state["_busy"]):
+        st.session_state["_ask_reset"] = True
+        st.rerun()
 
 if c_show.button(L["BTN_RECENT"], use_container_width=True, disabled=st.session_state["_busy"]):
     st.info(L["RECENT_INFO"])
