@@ -36,8 +36,9 @@ DEFAULTS = {
     "_busy": False,
     "_do_send": False,
     "_pending_text": "",
-    "_clear_input": False,   # 次ラン冒頭で入力欄を空にする指示
-    "_do_reset": False,      # 次ラン冒頭で会話全体をリセットする指示
+    "_clear_input": False,
+    "_do_reset": False,
+    "_ask_reset": False,      # ← 追加：確認ダイアログ表示フラグ
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -54,6 +55,7 @@ if st.session_state.get("_do_reset"):
     st.session_state["_pending_text"] = ""
     st.session_state["_busy"] = False
     st.session_state["_do_send"] = False
+    st.session_state["_ask_reset"] = False   # ← これ追加
     st.session_state["messages"] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
 # ================== 会話状態 ==================
@@ -305,7 +307,8 @@ st.text_area(
 c_send, c_new, c_show, c_dl = st.columns([1, 1, 1, 1])
 
 # 送信（同一ランではクリアしない → フラグだけ立てて rerun）
-if c_send.button("送信", type="primary", disabled=st.session_state["_busy"]):
+if c_send.button("送信", type="primary",
+                 disabled=(st.session_state["_busy"] or st.session_state["_ask_reset"])):
     txt = st.session_state.get("user_input", "").strip()
     if txt:
         st.session_state["_pending_text"] = txt
@@ -327,12 +330,28 @@ if st.session_state["_do_send"] and not st.session_state["_busy"]:
         st.rerun()
 
 # 新しい会話
-if c_new.button("新しい会話を始める", use_container_width=True, disabled=st.session_state["_busy"]):
-    st.session_state["_do_reset"] = True
-    st.rerun()
+# 新しい会話（確認ダイアログ付き）
+if st.session_state.get("_ask_reset", False):
+    with st.container():
+        st.warning("会話履歴がすべて消えます。続行しますか？")
+        cc1, cc2 = st.columns(2)
+        confirm = cc1.button("はい、リセットする", use_container_width=True)
+        cancel  = cc2.button("やめる", use_container_width=True)
+        if confirm:
+            st.session_state["_do_reset"] = True
+            st.session_state["_ask_reset"] = False
+            st.rerun()
+        elif cancel:
+            st.session_state["_ask_reset"] = False
+else:
+    if c_new.button("新しい会話（履歴が消えます）", use_container_width=True,
+                disabled=(st.session_state["_busy"] or st.session_state["_ask_reset"])):
+        st.session_state["_ask_reset"] = True
+        st.rerun()
 
 # 最近10件
-if c_show.button("最近10件を表示", use_container_width=True, disabled=st.session_state["_busy"]):
+if c_show.button("最近10件を表示", use_container_width=True,
+                 disabled=(st.session_state["_busy"] or st.session_state["_ask_reset"])):
     st.info("最近10件の会話を下に表示します。")
     recent = [m for m in st.session_state.messages if m["role"] in ("user", "assistant")][-10:]
     for m in recent:
@@ -354,8 +373,11 @@ up = st.file_uploader("保存した JSON を選択", type=["json"])
 col_l, col_m, col_r = st.columns(3)
 load_mode = col_l.radio("読込モード", ["置き換え", "末尾に追記"], horizontal=True)
 show_preview = col_m.checkbox("内容をプレビュー", value=True)
-do_load = col_r.button("読み込む", use_container_width=True, disabled=(up is None or st.session_state.get("_busy", False)))
-
+do_load = col_r.button(  # ← 代入を復活
+    "読み込む",
+    use_container_width=True,
+    disabled=(up is None or st.session_state.get("_busy", False) or st.session_state["_ask_reset"])
+)
 if up is not None:
     try:
         imported = json.load(up)
