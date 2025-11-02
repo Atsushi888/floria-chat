@@ -197,6 +197,10 @@ MIT License
 - App & UI: Atsushi888  
 - Tech assist: Luna (リリィ)  
 - Model: LLaMA 3.1 via OpenRouter  
-- Framework: Streamlit  
+- Framework: Streamlit
+
+## 🌐 Multilingual version
+`app_multilang.py` supports both Japanese and English.
+You can switch the interface language from the top-right corner of the app.
 
 > “静かな氷の呼吸が、あなたの言葉に触れて微笑むとき——”
