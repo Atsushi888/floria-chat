@@ -160,7 +160,7 @@ elif st.session_state["lang"] != lang:
     st.session_state["_clear_input"] = False
     st.session_state["_do_reset"] = False
     st.session_state.pop("_last_call_meta", None)
-    st.experimental_rerun()
+    st.rerun()
 
 SYSTEM_PROMPT = L["SYSTEM_PROMPT"]
 STARTER_HINT = L["PLACEHOLDER"]
@@ -431,7 +431,7 @@ if c_send.button(L["BTN_SEND"], type="primary", disabled=st.session_state["_busy
         st.session_state["_pending_text"] = txt
         st.session_state["_do_send"] = True
         st.session_state["_clear_input"] = True
-        st.experimental_rerun()
+        st.rerun()
 
 if st.session_state["_do_send"] and not st.session_state["_busy"]:
     st.session_state["_do_send"] = False
@@ -443,11 +443,11 @@ if st.session_state["_do_send"] and not st.session_state["_busy"]:
             floria_say(txt)
     finally:
         st.session_state["_busy"] = False
-        st.experimental_rerun()
+        st.rerun()
 
 if c_new.button(L["BTN_NEW"], use_container_width=True, disabled=st.session_state["_busy"]):
     st.session_state["_do_reset"] = True
-    st.experimental_rerun()
+    st.rerun()
 
 if c_show.button(L["BTN_RECENT"], use_container_width=True, disabled=st.session_state["_busy"]):
     st.info(L["RECENT_INFO"])
@@ -503,6 +503,6 @@ if up is not None:
                 st.session_state.pop("_last_call_meta", None)
 
                 st.success(L["LOAD_OK"])
-                st.experimental_rerun()
+                st.rerun()
     except Exception as e:
         st.error(f'{L["LOAD_FAIL"]}: {e}')
