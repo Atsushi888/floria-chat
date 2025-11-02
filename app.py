@@ -91,6 +91,30 @@ with st.expander("接続設定", expanded=False):
     
 st.markdown(f"<style>.chat-bubble {{ max-width: min(90vw, {wrap_width}ch); }}</style>", unsafe_allow_html=True)
 
+with st.expander("接続テスト（任意）", expanded=False):
+    if st.button("モデルへテストリクエスト"):
+        headers = {
+            "Authorization": f"Bearer {API}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "HTTP-Referer": "https://streamlit.io",
+            "X-Title": "Floria-Streamlit/2025-11-02",
+        }
+        payload = {
+            "model": MODEL,
+            "messages": [
+                {"role": "system", "content": "ping"},
+                {"role": "user", "content": "pong?"}
+            ],
+            "max_tokens": 8,
+            "temperature": 0.0,
+        }
+        try:
+            r = requests.post(f"{BASE}/chat/completions", headers=headers, json=payload, timeout=(10, 30))
+            st.code(f"status={r.status_code}\nbody={r.text[:500]}", language="text")
+        except Exception as e:
+            st.error(f"接続エラー: {e}")
+
 # ================== 軽いリトライ付きPOST ==================
 # 1) リトライ対象を拡張
 def _post_with_retry(url, headers, payload, timeout):
@@ -117,13 +141,16 @@ def floria_say(user_text: str):
         base_sys = st.session_state.messages[0]
         st.session_state.messages = [base_sys] + st.session_state.messages[-(MAX_LOG-1):]
 
-    # ✨正: まずユーザー発言を履歴に追加（これが無いと会話が崩れる）
+    # ユーザー発言
     st.session_state.messages.append({"role": "user", "content": user_text})
 
-    # 直近だけ送る
+    # 直近だけ送る（失敗時は薄める）
     base = st.session_state.messages
-    convo = [base[0]] + base[-60:]  # 厚めに送る
+    max_slice = 60
+    min_slice = 20
+    convo = [base[0]] + base[-max_slice:]
 
+    # ← これを追加（closureで使う）
     headers = {
         "Authorization": f"Bearer {API}",
         "Content-Type": "application/json",
@@ -132,6 +159,7 @@ def floria_say(user_text: str):
         "X-Title": "Floria-Streamlit/2025-11-02",
     }
 
+    # ← これを追加（元に戻す）
     def _one_call(msgs):
         payload = {
             "model": MODEL,
@@ -140,18 +168,44 @@ def floria_say(user_text: str):
             "max_tokens": int(max_tokens),
         }
         return _post_with_retry(f"{BASE}/chat/completions", headers, payload, timeout=(10, 60))
+        
+    def _call_with_shrink(msgs):
+        nonlocal max_slice
+        while True:
+            resp = _one_call(msgs)
+            # 正常系 or 一旦返す
+            if getattr(resp, "status_code", 599) == 200:
+                return resp, msgs
+            # 文言でコンテキスト超過を検知（プロバイダ差吸収）
+            body_text = ""
+            try:
+                _j = resp.json()
+                body_text = json.dumps(_j, ensure_ascii=False)[:800]
+            except Exception:
+                body_text = getattr(resp, "text", "")[:800]
+
+            is_ctx_err = (getattr(resp, "status_code", 0) in (400, 413)) or ("context" in body_text.lower() and "length" in body_text.lower())
+            if not is_ctx_err or max_slice <= min_slice:
+                # それ以外のエラー or これ以上縮められない
+                return resp, msgs
+
+            # 会話をさらに薄める（system + 末尾 max_slice/2）
+            max_slice = max(min_slice, max_slice // 2)
+            msgs = [base[0]] + base[-max_slice:]
+            # ループ継続して再試行
 
     parts = []
     reason = None
 
+    # ← これを追加
     def _need_more(reason, chunk):
         if reason not in ("length", "max_tokens"):
             return False
-        return not chunk.rstrip().endswith(("。","！","？",".","!","?","」","『","』","”","\""))
-
+        return not chunk.rstrip().endswith(("。","！","？",".","!","?","」","『","』","”","\"", "…"))
+    
     with st.spinner("フローリアが考えています…"):
         for _ in range(1 + (max_cont if auto_continue else 0)):
-            resp = _one_call(convo)
+            resp, used_convo = _call_with_shrink(convo)
 
             try:
                 data = resp.json()
@@ -163,8 +217,11 @@ def floria_say(user_text: str):
                 if code in (401, 403):
                     parts = ["（認証に失敗しました。LLAMA_API_KEY を確認してください）"]
                 else:
-                    err = (data.get("error", {}).get("message") or data.get("message") or getattr(resp, "text", ""))[:500] \
-                          if isinstance(data, dict) else getattr(resp, "text", "")[:500]
+                    err = ""
+                    if isinstance(data, dict):
+                        err = data.get("error", {}).get("message") or data.get("message") or ""
+                    if not err:
+                        err = getattr(resp, "text", "")[:500]
                     parts = [f"（ごめんなさい、冷たい霧で声が届きません… {code}: {err}）"]
                 break
 
@@ -174,16 +231,16 @@ def floria_say(user_text: str):
                 ch = data["choices"][0]
                 chunk = (ch.get("message", {}) or {}).get("content", "") or ""
                 reason = ch.get("finish_reason") or ((ch.get("finish_details") or {}).get("type"))
-            # --- レスポンス解析の直後などに追記 ---
+
+            # デバッグ用メタ
             if isinstance(data, dict):
-                meta = {
+                st.session_state["_last_call_meta"] = {
                     "status": getattr(resp, "status_code", None),
                     "finish": reason,
                     "usage": data.get("usage", {}),
-                    "len_messages": len(convo),
+                    "len_messages_sent": len(used_convo),
                     "model": MODEL,
                 }
-                st.session_state["_last_call_meta"] = meta
 
             if not chunk:
                 parts.append(f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）")
@@ -196,11 +253,11 @@ def floria_say(user_text: str):
                 break
 
             # 続きを依頼して再コール
-            convo = convo + [
+            convo = used_convo + [
                 {"role": "assistant", "content": chunk},
                 {"role": "user", "content": "続きのみを、重複や言い直しなしで出力してください。"},
             ]
-
+            
     # ✨正: 最後に一度だけアシスタント発言を積む
     a = "".join(parts).strip()
     if not a:
@@ -282,7 +339,56 @@ if c_show.button("最近10件を表示", use_container_width=True, disabled=st.s
         role = "あなた" if m["role"] == "user" else "フローリア"
         st.write(f"**{role}**：{m['content'].strip()}")
 
-# 会話ログ保存
-if c_dl.button("会話ログを保存（JSON）", use_container_width=True, disabled=st.session_state["_busy"]):
-    js = json.dumps(st.session_state.messages, ensure_ascii=False, indent=2)
-    st.download_button("JSON をダウンロード", js, file_name="floria_chat_log.json", mime="application/json")
+# （読み込みブロックの後に）
+st.markdown("---")
+st.subheader("会話ログの保存")
+st.download_button(
+    "JSON をダウンロード",
+    json.dumps(st.session_state.messages, ensure_ascii=False, indent=2),
+    file_name="floria_chat_log.json",
+    mime="application/json",
+    use_container_width=True
+)
+
+up = st.file_uploader("保存した JSON を選択", type=["json"])
+col_l, col_m, col_r = st.columns(3)
+load_mode = col_l.radio("読込モード", ["置き換え", "末尾に追記"], horizontal=True)
+show_preview = col_m.checkbox("内容をプレビュー", value=True)
+do_load = col_r.button("読み込む", use_container_width=True, disabled=(up is None or st.session_state.get("_busy", False)))
+
+if up is not None:
+    try:
+        imported = json.load(up)
+        # 最低限のバリデーション
+        ok = isinstance(imported, list) and all(isinstance(x, dict) and "role" in x and "content" in x for x in imported)
+        if not ok:
+            st.error("JSON 形式が不正です。messages の配列（各要素に role と content）が必要です。")
+        else:
+            if show_preview:
+                st.caption("先頭5件プレビュー")
+                st.json(imported[:5])
+            if do_load:
+                # system がなければ先頭に補う
+                if not (len(imported) > 0 and imported[0].get("role") == "system"):
+                    imported = [{"role": "system", "content": SYSTEM_PROMPT}] + imported
+
+                if load_mode == "置き換え":
+                    st.session_state["messages"] = imported
+                else:  # 末尾に追記
+                    base = st.session_state.get("messages", [{"role": "system", "content": SYSTEM_PROMPT}])
+                    # 先頭 system は既存を尊重し、imported 側の先頭 system はスキップ
+                    tail = imported[1:] if (len(imported) > 0 and imported[0].get("role") == "system") else imported
+                    st.session_state["messages"] = base + tail
+
+                # 作業フラグを安全側に初期化
+                st.session_state["_pending_text"] = ""
+                st.session_state["_do_send"] = False
+                st.session_state["_busy"] = False
+                st.session_state["_clear_input"] = False
+                st.session_state["_do_reset"] = False
+                st.session_state.pop("_last_call_meta", None)
+
+                st.success("読込が完了しました。")
+                st.rerun()
+    except Exception as e:
+        st.error(f"JSON の読み込みに失敗しました：{e}")
