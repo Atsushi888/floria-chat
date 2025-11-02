@@ -1,6 +1,7 @@
 # app.py — Floria Chat (Streamlit Edition, wide & auto-clear)
 
-import os, json, requests, html, streamlit as st
+import os, json, requests, html, time, streamlit as st
+
 
 # ================== 定数 ==================
 SYSTEM_PROMPT = (
@@ -11,6 +12,7 @@ SYSTEM_PROMPT = (
 )
 STARTER_HINT = "……白い霧の向こうに気配がする。そこにいるのは誰？"
 MAX_LOG = 500
+DISPLAY_LIMIT = 20000  # 20K 文字表示上限（ログ保存はフル）
 
 # ================== ページ設定 ==================
 st.set_page_config(page_title="Floria Chat", layout="wide")
@@ -79,94 +81,138 @@ with st.expander("世界観とあなたの役割（ロール）", expanded=False
 with st.expander("接続設定", expanded=False):
     c1, c2, c3 = st.columns(3)
     temperature = c1.slider("temperature", 0.0, 1.5, 0.70, 0.05)
-    max_tokens  = c2.slider("max_tokens", 64, 2048, 300, 16)
+    # 上限を 4096 に、デフォルトを 800 へ
+    max_tokens  = c2.slider("max_tokens（1レス上限）", 64, 4096, 800, 16)
     wrap_width  = c3.slider("折り返し幅", 20, 100, 80, 1)
 
+    r1, r2 = st.columns(2)
+    auto_continue = r1.checkbox("長文を自動で継ぎ足す", True)
+    max_cont      = r2.slider("最大継ぎ足し回数", 1, 6, 3)
+    
 st.markdown(f"<style>.chat-bubble {{ max-width: min(90vw, {wrap_width}ch); }}</style>", unsafe_allow_html=True)
 
 # ================== 軽いリトライ付きPOST ==================
+# 1) リトライ対象を拡張
 def _post_with_retry(url, headers, payload, timeout):
-    for _ in range(2):  # 429/502にだけ再試行
+    for _ in range(2):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
         except requests.exceptions.RequestException as e:
-            class R:  # 疑似レスポンス
+            class R:
                 status_code = 599
                 text = str(e)
                 def json(self): return None
             return R()
-        if resp.status_code not in (429, 502):
-            return resp
+        if resp.status_code in (429, 502, 503):   # ← 503 追加
+            delay = float(resp.headers.get("Retry-After", "0") or 0)
+            time.sleep(min(max(delay, 0.5), 3.0))
+            continue
+        return resp
     return resp
 
 # ================== 送信関数 ==================
 def floria_say(user_text: str):
-    # ログ肥大対策
+    # ログ丸め
     if len(st.session_state.messages) > MAX_LOG:
         base_sys = st.session_state.messages[0]
         st.session_state.messages = [base_sys] + st.session_state.messages[-(MAX_LOG-1):]
 
-    # ユーザー発言を追加
+    # ✨正: まずユーザー発言を履歴に追加（これが無いと会話が崩れる）
     st.session_state.messages.append({"role": "user", "content": user_text})
 
-    # 直近だけ送る（systemは先頭）
+    # 直近だけ送る
     base = st.session_state.messages
-    to_send = [base[0]] + base[-40:]
+    convo = [base[0]] + base[-60:]  # 厚めに送る
 
     headers = {
         "Authorization": f"Bearer {API}",
         "Content-Type": "application/json",
         "Accept": "application/json",
         "HTTP-Referer": "https://streamlit.io",
-        "X-Title": "Floria-Streamlit",
+        "X-Title": "Floria-Streamlit/2025-11-02",
     }
-    payload = {
-        "model": MODEL,
-        "messages": to_send,
-        "temperature": float(temperature),
-        "max_tokens": int(max_tokens),
-    }
+
+    def _one_call(msgs):
+        payload = {
+            "model": MODEL,
+            "messages": msgs,
+            "temperature": float(temperature),
+            "max_tokens": int(max_tokens),
+        }
+        return _post_with_retry(f"{BASE}/chat/completions", headers, payload, timeout=(10, 60))
+
+    parts = []
+    reason = None
+
+    def _need_more(reason, chunk):
+        if reason not in ("length", "max_tokens"):
+            return False
+        return not chunk.rstrip().endswith(("。","！","？",".","!","?","」","『","』","”","\""))
 
     with st.spinner("フローリアが考えています…"):
-        resp = _post_with_retry(f"{BASE}/chat/completions", headers, payload, timeout=(10, 60))
+        for _ in range(1 + (max_cont if auto_continue else 0)):
+            resp = _one_call(convo)
 
-    # 応答処理
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
+            try:
+                data = resp.json()
+            except Exception:
+                data = None
 
-    if getattr(resp, "status_code", 599) != 200:
-        code = getattr(resp, "status_code", 599)
-        if code in (401, 403):
-            a = "（認証に失敗しました。LLAMA_API_KEY を確認してください）"
-        else:
-            if isinstance(data, dict):
-                err = data.get("error", {}).get("message") or data.get("message") or str(data)
-            else:
-                err = getattr(resp, "text", "")[:500]
-            a = f"（ごめんなさい、冷たい霧で声が届きません… {code}: {err}）"
-    else:
-        a = ""
-        if isinstance(data, dict) and data.get("choices"):
-            a = data["choices"][0].get("message", {}).get("content", "") or ""
-        if not a:
-            a = f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）"
+            if getattr(resp, "status_code", 599) != 200:
+                code = getattr(resp, "status_code", 599)
+                if code in (401, 403):
+                    parts = ["（認証に失敗しました。LLAMA_API_KEY を確認してください）"]
+                else:
+                    err = (data.get("error", {}).get("message") or data.get("message") or getattr(resp, "text", ""))[:500] \
+                          if isinstance(data, dict) else getattr(resp, "text", "")[:500]
+                    parts = [f"（ごめんなさい、冷たい霧で声が届きません… {code}: {err}）"]
+                break
 
-    # アシスタント発言を追加（成功/失敗いずれも1回だけ）
+            chunk = ""
+            reason = None
+            if isinstance(data, dict) and data.get("choices"):
+                ch = data["choices"][0]
+                chunk = (ch.get("message", {}) or {}).get("content", "") or ""
+                reason = ch.get("finish_reason") or ((ch.get("finish_details") or {}).get("type"))
+
+            if not chunk:
+                parts.append(f"（返事の形が凍ってしまったみたい…：{str(data)[:200]}）")
+                break
+
+            parts.append(chunk)
+
+            # 継ぎ足し判定
+            if not (auto_continue and _need_more(reason, chunk)):
+                break
+
+            # 続きを依頼して再コール
+            convo = convo + [
+                {"role": "assistant", "content": chunk},
+                {"role": "user", "content": "続きのみを、重複や言い直しなしで出力してください。"},
+            ]
+
+    # ✨正: 最後に一度だけアシスタント発言を積む
+    a = "".join(parts).strip()
+    if not a:
+        a = "（返答の生成に失敗しました。少し内容を短くしてもう一度お試しください）"
     st.session_state.messages.append({"role": "assistant", "content": a})
 
 # ================== 会話表示 ==================
 st.subheader("会話")
 dialog = [m for m in st.session_state.messages if m["role"] in ("user", "assistant")]
+
 for m in dialog:
     role = m["role"]
-    txt = html.escape(m["content"].strip())
+    raw  = m["content"].strip()
+    # 表示側だけ制限（ログ保存はフル）
+    shown = raw if len(raw) <= DISPLAY_LIMIT else (raw[:DISPLAY_LIMIT] + " …[truncated]")
+    txt   = html.escape(shown)
+
     if role == "user":
         st.markdown(f"<div class='chat-bubble user'><b>あなた：</b><br>{txt}</div>", unsafe_allow_html=True)
     else:
         st.markdown(f"<div class='chat-bubble assistant'><b>フローリア：</b><br>{txt}</div>", unsafe_allow_html=True)
-
+        
 # ================== 入力欄 & ヒント ==================
 hint_col, _ = st.columns([1, 3])
 if hint_col.button("ヒントを入力欄に挿入", disabled=st.session_state["_busy"]):
